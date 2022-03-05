@@ -332,10 +332,10 @@ class Source(object):
 
             # Tabulate away!
             self._tab = IntegralTable(self.pf, self, self.grid, logN)
-            self._tabs = self.tab.TabulateRateIntegrals()
+            self._tabs = self._tab.TabulateRateIntegrals()
         else:
             self._tab = IntegralTable(self.pf, self, self.grid, logN)
-            self._tabs = self.tab.load(self.pf['source_table'])
+            self._tabs = self._tab.load(self.pf['source_table'])
 
         self._setup_interp()
 

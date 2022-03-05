@@ -252,6 +252,32 @@ class IntegralTable(object):
         return self._tab_indices
         #iN = np.indices(self.dimsN)
 
+    @property
+    def axes(self):
+        if not hasattr(self, '_axes'):
+            self._axes = copy.copy(self.tab_logN)
+            # Determine indices for ionized fraction and time.
+            if self.pf['secondary_ionization'] > 1:
+                self._axes.append(self.tab_logx)
+            if False:#self.pf['spectrum_evolving']:
+                self._axes.append(self.tab_t)
+
+        return self._axes
+
+    @property
+    def axes_names(self):
+        if not hasattr(self, '_axes_names'):
+            self._axes_names = []
+            for absorber in self.grid.absorbers:
+                self._axes_names.append('logN_{!s}'.format(absorber))
+
+            if self.pf['secondary_ionization'] > 1:
+                self.axes_names.append('x')
+            if False:#self.pf['spectrum_evolving']:
+                self.axes_names.append('t')
+
+        return self._axes_names
+
     def _get_table_properties(self):
         """
         Figure out ND space of all lookup table elements.
@@ -968,6 +994,9 @@ class IntegralTable(object):
 
         f.close()
 
+        if self.pf['verbose']:
+            print("# Wrote {}.".format(fn))
+
     def load(self, fn):
         """
         Load table from hdf5.
@@ -977,6 +1006,9 @@ class IntegralTable(object):
         self.tabs = {}
         with h5py.File(fn, 'r') as f:
             for element in f.keys():
+                if element == 'parameters':
+                    continue
+
                 if f[element].attrs.get('axis') is not None:
                     axes.append([int(f[element].attrs.get('axis')), element,
                         np.array(f[(element)])])
@@ -984,7 +1016,8 @@ class IntegralTable(object):
 
                 self.tabs[element] = np.array(f[(element)])
 
-        print('Read integral table from {!s}.'.format(fn))
+        if self.pf['verbose']:
+            print('# Read integral table from {!s}.'.format(fn))
 
         axis_nums, axis_names, values = list(zip(*axes))
 
