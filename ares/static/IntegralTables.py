@@ -39,93 +39,156 @@ class IntegralTable(object):
         self.pf = pf
         self.src = source
         self.grid = grid
-
-        # need to not do this stuff if a table was supplied via source_table
-        # best way: save pf in hdf5 file, use it
-        # just override table_* parameters...what else?
-
-        if self.pf['source_table']:
-            self.load(self.pf['source_table'])
-
-        # Move this stuff to TableProperties
-        if self.pf['tables_logN'] is not None:
-            self.logN = self.pf['tables_logN']
-        elif logN is None:
-
-            # Required bounds of table assuming minimum species fraction
-            self.logNlimits = self.TableBoundsAuto(self.pf['tables_xmin'])
-
-            # Only override automatic table properties if the request table size
-            # is *bigger* than the default one.
-            self._N = []
-            self.logN = []
-            for i, absorber in enumerate(self.grid.absorbers):
-
-                if self.pf['tables_logNmin'][i] is not None:
-                    self.logNlimits[i][0] = self.pf['tables_logNmin'][i]
-
-                if self.pf['tables_logNmax'][i] is not None:
-                    self.logNlimits[i][1] = self.pf['tables_logNmax'][i]
-
-                logNmin, logNmax = self.logNlimits[i]
-
-                d = int((logNmax - logNmin) / self.pf['tables_dlogN'][i]) + 1
-
-                self.logN.append(np.linspace(logNmin, logNmax, d))
-                self._N.append(np.logspace(logNmin, logNmax, d))
-        else:
-            self.logN = logN
-
-
-        # Retrieve dimensions, add some for secondary electrons if necessary
-        self.dimsN = np.array([len(element) for element in self.N])
-        self.elements_per_table = np.prod(self.dimsN)
-        self.Nd = len(self.dimsN)
-
-        self.logx = np.array([-np.inf])
-        if self.pf['secondary_ionization'] > 1:
-            self.esec = SecondaryElectrons(method=self.pf['secondary_ionization'])
-            if self.pf['secondary_ionization'] == 2:
-                self.logx = np.linspace(self.pf['tables_logxmin'], 0,
-                    abs(self.pf['tables_logxmin']) \
-                    // self.pf['tables_dlogx'] + 1)
-                self.E = np.linspace(self.src.Emin, self.src.Emax,
-                    (self.src.Emax - self.src.Emin) \
-                    // self.pf['tables_dE'] + 1)
-            elif self.pf['secondary_ionization'] == 3:
-                self.logx = self.esec.logx
-                self.E = self.esec.E
-
-        self.x = 10**self.logx
-
-        # Times
-        if False:#self.pf['spectrum_evolving']:
-            if self.pf['tables_times'] is None:
-                stop = self.pf['stop_time'] * self.pf['time_units']
-                self.t = np.linspace(0, stop, 1 + stop // self.pf['tables_dt'])
-            else:
-                self.t = self.pf['tables_times']
-        else:
-            self.t = np.array([0])
-
-        # What quantities are we going to compute?
-        self.IntegralList = self.ToCompute()
-
-        # Create array of all combinations of column densities and
-        # corresponding indices
-        self.TableProperties()
+        self._logN_user = logN
 
         self.E_th = {}
         for absorber in ['h_1', 'he_1', 'he_2']:
             self.E_th[absorber] = self.grid.ioniz_thresholds[absorber]
 
-    @property
-    def N(self):
-        if not hasattr(self, '_N'):
-            self._N = [10**tmp for tmp in self.logN]
-        return self._N
+        # need to not do this stuff if a table was supplied via source_table
+        # best way: save pf in hdf5 file, use it
+        # just override table_* parameters...what else?
 
-    def TableBoundsAuto(self, xmin=1e-5):
+        if self.pf['source_table'] is not None:
+            self.load(self.pf['source_table'])
+
+    @property
+    def tab_logN(self):
+        if not hasattr(self, '_tab_logN'):
+            if self.pf['tables_logN'] is not None:
+                self._tab_logN = self.pf['tables_logN']
+            elif self._logN_user is not None:
+                self._tab_logN = self._logN_user
+            else:
+                # Required bounds of table assuming minimum species fraction
+                logNlimits = self.get_table_bounds(self.pf['tables_xmin'])
+
+                # Only override automatic table properties if the request table size
+                # is *bigger* than the default one.
+                self._tab_logN = []
+                for i, absorber in enumerate(self.grid.absorbers):
+
+                    if self.pf['tables_logNmin'][i] is not None:
+                        logNlimits[i][0] = self.pf['tables_logNmin'][i]
+
+                    if self.pf['tables_logNmax'][i] is not None:
+                        logNlimits[i][1] = self.pf['tables_logNmax'][i]
+
+                    logNmin, logNmax = logNlimits[i]
+
+                    d = int((logNmax - logNmin) / self.pf['tables_dlogN'][i]) + 1
+
+                    self.tab_logN.append(np.linspace(logNmin, logNmax, d))
+                    #self._N.append(np.logspace(logNmin, logNmax, d))
+
+                self._tab_logN = np.array(self._tab_logN)
+
+        return self._tab_logN
+
+    @property
+    def tab_N(self):
+        return 10**self.tab_logN
+
+    @property
+    def dims(self):
+        if not hasattr(self, '_dims'):
+            self._dims = np.array([len(element) for element in self.tab_N])
+        return self._dims
+
+    @property
+    def size(self):
+        return np.prod(self.dims)
+
+    @property
+    def ndim(self):
+        if not hasattr(self, '_ndim'):
+            self._ndim = len(self.dims)
+            # Determine indices for ionized fraction and time.
+            if self.pf['secondary_ionization'] > 1:
+                self._ndim += 1
+                self.axes.append(self.logx)
+                self.axes_names.append('x')
+            if False:#self.pf['spectrum_evolving']:
+                self._ndim += 1
+                self.axes.append(self.t)
+                self.axes_names.append('t')
+
+        return self._ndim
+        # Retrieve dimensions, add some for secondary electrons if necessary
+
+    @property
+    def tab_E(self):
+        if not hasattr(self, '_tab_E'):
+            if self.pf['secondary_ionization'] == 2:
+                self._tab_E = np.linspace(self.src.Emin, self.src.Emax,
+                    (self.src.Emax - self.src.Emin) \
+                    // self.pf['tables_dE'] + 1)
+            elif self.pf['secondary_ionization'] == 3:
+                self._tab_E = self.esec.E
+            else:
+                raise NotImplementedError('Only secondary_ionization=1,2, or 3')
+
+        return self._tab_E
+
+    def esec(self):
+        if not hasattr(self, '_esec'):
+            self._esec = SecondaryElectrons(method=self.pf['secondary_ionization'])
+        return self.esec
+
+    @property
+    def tab_x(self):
+        return 10**self.tab_logx
+
+    @property
+    def tab_logx(self):
+        if not hasattr(self, '_logx'):
+            self._logx = np.array([-np.inf])
+            if self.pf['secondary_ionization'] > 1:
+
+                if self.pf['secondary_ionization'] == 2:
+                    self._logx = np.linspace(self.pf['tables_logxmin'], 0,
+                        abs(self.pf['tables_logxmin']) \
+                        // self.pf['tables_dlogx'] + 1)
+
+                elif self.pf['secondary_ionization'] == 3:
+                    self._logx = self.esec.logx
+        return self._logx
+
+    @property
+    def tab_t(self):
+        if not hasattr(self, '_tab_t'):
+
+            # Times
+            if False:#self.pf['spectrum_evolving']:
+                if self.pf['tables_times'] is None:
+                    stop = self.pf['stop_time'] * self.pf['time_units']
+                    self._tab_t = np.linspace(0, stop,
+                        1 + stop // self.pf['tables_dt'])
+                else:
+                    self._tab_t = self.pf['tables_times']
+            else:
+                self._tab_t = np.array([0])
+
+        return self._tab_t
+
+        # Create array of all combinations of column densities and
+        # corresponding indices
+        #self._get_table_properties()
+
+    @property
+    def list_of_integrals(self):
+        if not hasattr(self, '_list_of_integrals'):
+            # What quantities are we going to compute?
+            self._list_of_integrals = self.ToCompute()
+        return self._list_of_integrals
+
+    #@property
+    #def N(self):
+    #    if not hasattr(self, '_N'):
+    #        self._N = [10**tmp for tmp in self.logN]
+    #    return self._N
+
+    def get_table_bounds(self, xmin=1e-5):
         """
         Calculate what the bounds of the table must be for a given grid.
         """
@@ -137,7 +200,7 @@ class IntegralTable(object):
             logNmax = math.ceil(np.log10(np.sum(n * self.grid.dr)))
             logNlimits.append([logNmin, logNmax])
 
-        return logNlimits
+        return np.array(logNlimits)
 
     def ToCompute(self):
         """
@@ -157,36 +220,54 @@ class IntegralTable(object):
 
         return integrals
 
-    def TableProperties(self):
+    @property
+    def tab_logN_flat(self):
+        if not hasattr(self, '_tab_logN_flat'):
+        # Values that correspond to indices
+            self._tab_logN_flat = []
+            for item in itertools.product(*self.tab_logN):
+                self._tab_logN_flat.append(item)
+            self._tab_logN_flat = np.array(self._tab_logN_flat)
+
+        return self._tab_logN_flat
+
+    @property
+    def tab_N_flat(self):
+        return 10**self.tab_logN_flat
+
+    @property
+    def tab_indices(self):
+        if not hasattr(self, '_tab_indices'):
+            tmp = []
+            for dims in self.dims:
+                tmp.append(np.arange(self.dims))
+
+            # Indices for column densities
+            iN = []
+            for item in itertools.product(*tmp):
+                iN.append(tuple(item))
+
+            self._tab_indices = iN
+
+        return self._tab_indices
+        #iN = np.indices(self.dimsN)
+
+    def _get_table_properties(self):
         """
         Figure out ND space of all lookup table elements.
         """
 
         # Determine indices for column densities.
-        tmp = []
-        for dims in self.dimsN:
-            tmp.append(np.arange(dims))
+
 
         if rank == 0:
             print("Setting up integral table...")
 
-        # Values that correspond to indices
-        logNarr = []
-        for item in itertools.product(*self.logN):
-            logNarr.append(item)
-
-        # Indices for column densities
-        iN = []
-        for item in itertools.product(*tmp):
-            iN.append(tuple(item))
-
-        #iN = np.indices(self.dimsN)
-
-        self.indices_N = iN
-        self.logNall = np.array(logNarr)
+        #self.indices_N = iN
+        self.logNall = self.tab_logN_flat#np.array(logNarr)
         self.Nall = 10**self.logNall
 
-        self.axes = copy.copy(self.logN)
+        self.axes = copy.copy(self.tab_logN)
         self.axes_names = []
         for absorber in self.grid.absorbers:
             self.axes_names.append('logN_{!s}'.format(absorber))
@@ -230,8 +311,8 @@ class IntegralTable(object):
         h = 0
         tabs = {}
         i_donor = 0
-        while h < len(self.IntegralList):
-            integral = self.IntegralList[h]
+        while h < len(self.list_of_integrals):
+            integral = self.list_of_integrals[h]
 
             donor = self.grid.absorbers[i_donor]
             for i, absorber in enumerate(self.grid.absorbers):
@@ -246,29 +327,29 @@ class IntegralTable(object):
                 if re.search('Wiggle', name) and absorber in self.grid.metals:
                     continue
 
-                dims = list(self.dimsN.copy())
+                dims = list(self.dims.copy())
 
                 if integral == 'Tau':
                     dims.append(1)
                 else:
-                    dims.append(len(self.t))
+                    dims.append(len(self.tab_t))
                 if self.pf['secondary_ionization'] > 1 \
                     and integral not in ['Tau', 'Phi']:
-                    dims.append(len(self.logx))
+                    dims.append(len(self.tab_logx))
                 else:
                     dims.append(1)
 
-                pb = ProgressBar(self.elements_per_table, name)
+                pb = ProgressBar(self.size, name)
                 pb.start()
 
                 tab = np.zeros(dims)
-                for j, ind in enumerate(self.indices_N):
+                for j, ind in enumerate(self.tab_indices):
 
                     if j % size != rank:
                         continue
 
-                    tmpt = self.t
-                    tmpx = self.x
+                    tmpt = self.tab_t
+                    tmpx = self.tab_x
                     if integral == 'Tau':
                         tmpx = [0]
                         tmpt = [0]
@@ -278,7 +359,7 @@ class IntegralTable(object):
                     for k, t in enumerate(tmpt):
                         for l, x in enumerate(tmpx):
                             tab[ind][k,l] = self.Tabulate(integral,
-                                absorber, donor, self.Nall[j], x=x, t=t, ind=j)
+                                absorber, donor, self.tab_N_flat[j], x=x, t=t, ind=j)
 
                     pb.update(j)
 
@@ -340,28 +421,29 @@ class IntegralTable(object):
 
             for j, actual_absorber in enumerate(self.grid.absorbers):
 
-                pb = ProgressBar(self.elements_per_table,
+                pb = ProgressBar(self.size,
                     'tau(E, N; {0!s}, {1!s})'.format(absorber,\
                     actual_absorber))
                 pb.start()
 
                 sigma = self.sigma_E[actual_absorber]
 
-                for k in range(self.Nall.shape[0]):
+                for k in range(self.tab_N_flat.shape[0]):
 
                     if k % size != rank:
                         continue
 
-                    buff[:,k] += sigma * self.Nall[k][j]
+                    buff[:,k] += sigma * self.tab_N_flat[k][j]
 
                     pb.update(k)
 
                 pb.finish()
 
             self._tau_E_N[absorber] = \
-                np.zeros([len(self.E[absorber]), self.Nall.shape[0]])
+                np.zeros([len(self.E[absorber]), self.tab_N_flat.shape[0]])
 
-            nothing = MPI.COMM_WORLD.Allreduce(buff, self._tau_E_N[absorber])
+            if size > 1:
+                nothing = MPI.COMM_WORLD.Allreduce(buff, self._tau_E_N[absorber])
 
             del buff
 
@@ -560,13 +642,13 @@ class IntegralTable(object):
             #
             #    #if i > 0 and np.all(self.E[absorber] == self.E[]
             #    self._tau_E_N[absorber] = \
-            #        np.zeros([len(self.E[absorber]), self.Nall.shape[0]])
+            #        np.zeros([len(self.E[absorber]), self.tab_N_flat.shape[0]])
             #
             #    for j, actual_absorber in enumerate(self.grid.absorbers):
             #        sigma = self.sigma_E[actual_absorber]
             #
-            #        for k in range(self.Nall.shape[0]):
-            #            self._tau_E_N[absorber][:,k] += sigma * self.Nall[k][j]
+            #        for k in range(self.tab_N_flat.shape[0]):
+            #            self._tau_E_N[absorber][:,k] += sigma * self.tab_N_flat[k][j]
 
         return self._tau_E_N
 
@@ -581,7 +663,7 @@ class IntegralTable(object):
         absorber : str
             Name of absorber, probably 'h_1', 'he_1', or 'he_2'.
         ind : int
-            [Optional] index where input column density lives in self.Nall.
+            [Optional] index where input column density lives in self.tab_N_flat.
 
         """
 
@@ -630,7 +712,7 @@ class IntegralTable(object):
         absorber : str
             Name of absorber, probably 'h_1', 'he_1', or 'he_2'.
         ind : int
-            [Optional] index where input column density lives in self.Nall.
+            [Optional] index where input column density lives in self.tab_N_flat.
 
         """
 
@@ -909,6 +991,8 @@ class IntegralTable(object):
         # See if parameter file and integral table are consistent
         ok = True
         for i, axis in enumerate(axis_names):
+
+            print(i, axis)
 
             if axis not in self.axes_names:
                 print("WARNING: Axis \'{!s}\' not expected.".format(axis))

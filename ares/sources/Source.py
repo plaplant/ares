@@ -343,8 +343,8 @@ class Source(object):
         self._tables = {}
         for tab in self.tabs:
             self._tables[tab] = \
-                LookupTable(self.pf, tab, self.tab.logN, self.tabs[tab],
-                    self.tab.logx, self.tab.t)
+                LookupTable(self.pf, tab, self.tab.tab_logN, self.tabs[tab],
+                    self.tab.tab_logx, self.tab.tab_t)
 
     @property
     def sigma(self):
