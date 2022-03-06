@@ -366,7 +366,7 @@ class IntegralTable(object):
 
                         skip_tab = 0
                         if name in f.keys():
-                            tabs[name] = np.array(f[(name)])
+                            tabs[name] = np.array(f[(name)])#.squeeze()
                             if rank == 0 and self.pf['verbose']:
                                 print("# Loaded {} from {}.".format(name, fn))
                             skip_tab = 1
@@ -439,7 +439,7 @@ class IntegralTable(object):
                 else:
                     tmp = tab
 
-                tabs[name] = tmp
+                tabs[name] = tmp.squeeze()
 
                 pb.finish()
 
@@ -447,11 +447,14 @@ class IntegralTable(object):
                     f = h5py.File(fn, 'a')
                     f.create_dataset(name, data=tabs[name])
                     f.close()
-                    print("# Saved checkpoint for {} to {}".format(name, fn))
+                    print("# Saved table {} to {}".format(name, fn))
 
 
                 MPI.COMM_WORLD.Barrier()
-                have_fn = os.path.exists(fn)
+
+                # Update whether we have a checkpoint file or not.
+                if fn is not None:
+                    have_fn = os.path.exists(fn)
 
             if re.search('Wiggle', name):
                 if self.grid.metals:
