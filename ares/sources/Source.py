@@ -33,7 +33,7 @@ np.seterr(all='ignore')   # exp overflow occurs when integrating BB
                           # will return 0 as it should for x large
 
 class Source(object):
-    def __init__(self, grid=None, cosm=None, logN=None, init_tabs=True,
+    def __init__(self, grid=None, cosm=None, logN=None, init_tabs=False,
         **kwargs):
         """
         Initialize a radiation source object.
@@ -49,10 +49,11 @@ class Source(object):
 
         self.pf = ParameterFile(**kwargs)
         self._cosm_ = cosm
+        self._logN_user = logN
 
         # Create lookup tables for integral quantities
-        if init_tabs and (grid is not None):
-            self._create_integral_table(logN=logN)
+        #if init_tabs and (grid is not None):
+        #    self.get_integral_table(logN=logN)
 
     @property
     def Emin(self):
@@ -297,22 +298,34 @@ class Source(object):
     @property
     def tables(self):
         if not hasattr(self, '_tables'):
-            self._create_integral_table()
+            self.get_integral_tables()
         return self._tables
 
     @property
     def tab(self):
         if not hasattr(self, '_tab'):
-            self._create_integral_table()
+            logN = self._logN_user
+            if self.pf['source_table'] is None:
+                # Overide defaults if supplied - this is dangerous
+                if self._logN_user is not None:
+                    self.pf.update({'tables_dlogN': [np.diff(tmp) for tmp in logN]})
+                    self.pf.update({'tables_logNmin': [np.min(tmp) for tmp in logN]})
+                    self.pf.update({'tables_logNmax': [np.max(tmp) for tmp in logN]})
+
+                # Tabulate away!
+                self._tab = IntegralTable(self.pf, self, self.grid, logN)
+            else:
+                self._tab = IntegralTable(self.pf, self, self.grid, logN)
+
         return self._tab
 
     @property
     def tabs(self):
         if not hasattr(self, '_tabs'):
-            self._create_integral_table()
+            self.get_integral_tables()
         return self._tabs
 
-    def _create_integral_table(self, logN=None):
+    def get_integral_tables(self, fn=None):
         """
         Take tables and create interpolation functions.
         """
@@ -324,18 +337,9 @@ class Source(object):
             return
 
         if self.pf['source_table'] is None:
-            # Overide defaults if supplied - this is dangerous
-            if logN is not None:
-                self.pf.update({'tables_dlogN': [np.diff(tmp) for tmp in logN]})
-                self.pf.update({'tables_logNmin': [np.min(tmp) for tmp in logN]})
-                self.pf.update({'tables_logNmax': [np.max(tmp) for tmp in logN]})
-
-            # Tabulate away!
-            self._tab = IntegralTable(self.pf, self, self.grid, logN)
-            self._tabs = self._tab.TabulateRateIntegrals()
+            self._tabs = self.tab.TabulateRateIntegrals(fn=fn)
         else:
-            self._tab = IntegralTable(self.pf, self, self.grid, logN)
-            self._tabs = self._tab.load(self.pf['source_table'])
+            self._tabs = self.tab.load(self.pf['source_table'])
 
         self._setup_interp()
 

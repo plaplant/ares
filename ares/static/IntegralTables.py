@@ -325,17 +325,25 @@ class IntegralTable(object):
         else:
             return "log{0!s}_{1!s}".format(integral, absorber)
 
-    def TabulateRateIntegrals(self):
+    def TabulateRateIntegrals(self, fn=None):
         """
         Return a dictionary of lookup tables, and also store a copy as
         self.itabs.
         """
 
-        if rank == 0:
+        if rank == 0 and self.pf['verbose']:
             print('# Tabulating integral quantities...')
 
         if self.pf['tables_discrete_gen'] and (size > 1):
             self._tabulate_tau_E_N()
+
+        # Will checkpoint if file provided
+        f = None
+        have_fn = False
+        if fn is not None:
+            have_fn = os.path.exists(fn)
+            if rank == 0 and self.pf['verbose']:
+                print("# Will save checkpoints to {}.".format(fn))
 
         # Loop over integrals
         h = 0
@@ -348,6 +356,37 @@ class IntegralTable(object):
             for i, absorber in enumerate(self.grid.absorbers):
 
                 name = self._DatasetName(integral, absorber, donor)
+
+                # Check for checkpoints.
+                # Root processor needs to tell everybody else to move on
+                if (fn is not None) and have_fn:
+
+                    if rank == 0:
+                        f = h5py.File(fn, 'r')
+
+                        skip_tab = 0
+                        if name in f.keys():
+                            tabs[name] = np.array(f[(name)])
+                            if rank == 0 and self.pf['verbose']:
+                                print("# Loaded {} from {}.".format(name, fn))
+                            skip_tab = 1
+
+                        f.close()
+
+                        # Message: skip ahead?
+                        for _i_ in range(1, size):
+                            MPI.COMM_WORLD.Send(np.array([skip_tab]), dest=_i_,
+                                tag=10*_i_)
+
+                        if skip_tab:
+                            continue
+
+                    if (size > 1) and (rank > 0):
+                        skip = np.array([0])
+                        MPI.COMM_WORLD.Recv(skip, source=0, tag=10*rank)
+                        if skip:
+                            continue
+
 
                 # Only need to do this once
                 if integral == 'Tau' and i > 0:
@@ -393,9 +432,26 @@ class IntegralTable(object):
 
                     pb.update(j)
 
-                tabs[name] = np.squeeze(tab).copy()
+                # Collect results from all processors
+                if size > 1:
+                    tmp = np.zeros_like(tab)
+                    nothing = MPI.COMM_WORLD.Allreduce(tab, tmp)
+                else:
+                    tmp = tab
+
+                tabs[name] = tmp
 
                 pb.finish()
+
+                if (fn is not None) and (rank == 0):
+                    f = h5py.File(fn, 'a')
+                    f.create_dataset(name, data=tabs[name])
+                    f.close()
+                    print("# Saved checkpoint for {} to {}".format(name, fn))
+
+
+                MPI.COMM_WORLD.Barrier()
+                have_fn = os.path.exists(fn)
 
             if re.search('Wiggle', name):
                 if self.grid.metals:
@@ -416,15 +472,15 @@ class IntegralTable(object):
             print('# Integral tabulation complete.')
 
         # Collect results from all processors
-        if size > 1:
-            collected_tabs = {}
-            for tab in tabs:
-                tmp = np.zeros_like(tabs[tab])
-                nothing = MPI.COMM_WORLD.Allreduce(tabs[tab], tmp)
-                collected_tabs[tab] = tmp.copy()
-                del tmp
+        #if size > 1:
+        #    collected_tabs = {}
+        #    for tab in tabs:
+        #        tmp = np.zeros_like(tabs[tab])
+        #        nothing = MPI.COMM_WORLD.Allreduce(tabs[tab], tmp)
+        #        collected_tabs[tab] = tmp.copy()
+        #        del tmp
 
-            tabs = collected_tabs.copy()
+        #    tabs = collected_tabs.copy()
 
         self.tabs = tabs
 
@@ -948,9 +1004,6 @@ class IntegralTable(object):
 
         """
 
-        if rank > 0:
-            return
-
         try:
             import h5py
             have_h5py = True
@@ -963,6 +1016,12 @@ class IntegralTable(object):
 
         fn = '{!s}.hdf5'.format(prefix)
 
+        if not hasattr(self, 'tabs'):
+            self.TabulateRateIntegrals(fn)
+
+        if rank > 0:
+            return
+
         f = h5py.File(fn, 'w')
         for i, axis in enumerate(self.axes):
             ds = f.create_dataset(self.axes_names[i], data=axis)
@@ -970,7 +1029,13 @@ class IntegralTable(object):
             ds.attrs.create('logN', data=int(self.axes_names[i][0:4]=='logN'))
 
         for tab in self.tabs:
+            if tab in f.keys():
+                continue
+
             f.create_dataset(tab, data=self.tabs[tab])
+
+            if self.pf['verbose']:
+                print("# Saved dataset {}.".format(tab))
 
         # Save parameter file
         pf_grp = f.create_group('parameters')

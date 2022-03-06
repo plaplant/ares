@@ -18,6 +18,11 @@ from ..util.PrintInfo import print_1d_sim
 from ..util.ReadData import _sort_history
 from ..analysis.RaySegment import RaySegment as AnalyzeRay
 
+from mpi4py import MPI
+
+rank = MPI.COMM_WORLD.rank
+size = MPI.COMM_WORLD.size
+
 class RaySegment(AnalyzeRay):
     """
     Propagate radiation along a ray!
