@@ -116,19 +116,22 @@ class IntegralTable(object):
         return self._ndim
         # Retrieve dimensions, add some for secondary electrons if necessary
 
-    @property
-    def tab_E(self):
-        if not hasattr(self, '_tab_E'):
-            if self.pf['secondary_ionization'] == 2:
-                self._tab_E = np.linspace(self.src.Emin, self.src.Emax,
-                    (self.src.Emax - self.src.Emin) \
-                    // self.pf['tables_dE'] + 1)
-            elif self.pf['secondary_ionization'] == 3:
-                self._tab_E = self.esec.E
-            else:
-                raise NotImplementedError('Only secondary_ionization=1,2, or 3')
+    #@property
+    #def tab_E(self):
+    #    if not hasattr(self, '_tab_E'):
+    #        if self.pf['secondary_ionization'] == 1:
+    #            self._tab_E = np.linspace(self.src.Emin,
+    #                self.src.Emax, self.pf['tables_energy_bins'])
+    #        elif self.pf['secondary_ionization'] == 2:
+    #            self._tab_E = np.linspace(self.src.Emin, self.src.Emax,
+    #                (self.src.Emax - self.src.Emin) \
+    #                // self.pf['tables_dE'] + 1)
+    #        elif self.pf['secondary_ionization'] == 3:
+    #            self._tab_E = self.esec.E
+    #        else:
+    #            raise NotImplementedError('Only secondary_ionization=1,2, or 3')
 
-        return self._tab_E
+    #    return self._tab_E
 
     def esec(self):
         if not hasattr(self, '_esec'):
@@ -146,12 +149,13 @@ class IntegralTable(object):
             if self.pf['secondary_ionization'] > 1:
 
                 if self.pf['secondary_ionization'] == 2:
-                    self._logx = np.linspace(self.pf['tables_logxmin'], 0,
-                        abs(self.pf['tables_logxmin']) \
-                        // self.pf['tables_dlogx'] + 1)
-
+                    dlogx = self.pf['tables_logxmin']
+                    print('hey', dlogx, self.pf['tables_logxmin'])
+                    Nx = abs(self.pf['tables_logxmin']) // dlogx  + 1
+                    self._logx = np.linspace(self.pf['tables_logxmin'], 0, Nx)
                 elif self.pf['secondary_ionization'] == 3:
                     self._logx = self.esec.logx
+
         return self._logx
 
     @property
@@ -240,7 +244,7 @@ class IntegralTable(object):
         if not hasattr(self, '_tab_indices'):
             tmp = []
             for dims in self.dims:
-                tmp.append(np.arange(self.dims))
+                tmp.append(np.arange(dims))
 
             # Indices for column densities
             iN = []
@@ -328,9 +332,9 @@ class IntegralTable(object):
         """
 
         if rank == 0:
-            print('Tabulating integral quantities...')
+            print('# Tabulating integral quantities...')
 
-        if self.pf['tables_discrete_gen'] and size > 1:
+        if self.pf['tables_discrete_gen'] and (size > 1):
             self._tabulate_tau_E_N()
 
         # Loop over integrals
@@ -409,7 +413,7 @@ class IntegralTable(object):
                 i_donor = 0
 
         if rank == 0:
-            print('Integral tabulation complete.')
+            print('# Integral tabulation complete.')
 
         # Collect results from all processors
         if size > 1:
@@ -439,11 +443,11 @@ class IntegralTable(object):
 
             if i > 0:
                 abs_prev = self.grid.absorbers[i-1]
-                if np.all(self.E[absorber] == self.E[abs_prev]):
+                if np.all(self.tab_E[absorber] == self.tab_E[abs_prev]):
                     self._tau_E_N[absorber] = self._tau_E_N[abs_prev]
                     continue
 
-            buff = np.zeros([len(self.E[absorber]), self.Nall.shape[0]])
+            buff = np.zeros([len(self.tab_E[absorber]), self.tab_N_flat.shape[0]])
 
             for j, actual_absorber in enumerate(self.grid.absorbers):
 
@@ -466,7 +470,7 @@ class IntegralTable(object):
                 pb.finish()
 
             self._tau_E_N[absorber] = \
-                np.zeros([len(self.E[absorber]), self.tab_N_flat.shape[0]])
+                np.zeros([len(self.tab_E[absorber]), self.tab_N_flat.shape[0]])
 
             if size > 1:
                 nothing = MPI.COMM_WORLD.Allreduce(buff, self._tau_E_N[absorber])
@@ -487,7 +491,7 @@ class IntegralTable(object):
         if self.pf['tables_discrete_gen']:
             tau = 0.0
             for absorber in self.grid.absorbers:
-                E = self.E[absorber]
+                E = self.tab_E[absorber]
                 tau += np.trapz(self.tau_E_N[absorber][:,ind], E)
 
         else:
@@ -580,22 +584,22 @@ class IntegralTable(object):
         return np.log10(table)
 
     @property
-    def E(self):
-        if not hasattr(self, '_E'):
+    def tab_E(self):
+        if not hasattr(self, '_tab_E'):
             if self.pf['tables_discrete_gen']:
-                self._E = {}
+                self._tab_E = {}
                 for absorber in self.grid.absorbers:
                     Emin = max(self.E_th[absorber], self.src.Emin)
-                    self._E[absorber] = np.linspace(Emin, self.src.Emax,
+                    self._tab_E[absorber] = np.linspace(Emin, self.src.Emax,
                         self.pf['tables_energy_bins'])
 
                 if self.pf['secondary_ionization'] > 1:
                     raise ValueError('E attribute no longer unique!')
 
             else:
-                self._E = None
+                self._tab_E = None
 
-        return self._E
+        return self._tab_E
 
     @property
     def sigma_E(self):
@@ -604,7 +608,7 @@ class IntegralTable(object):
             for absorber in self.grid.absorbers:
                 self._sigma_E[absorber] = \
                     np.array(list(map(self.grid.bf_cross_sections[absorber],
-                    self.E[absorber])))
+                    self.tab_E[absorber])))
 
         return self._sigma_E
 
@@ -613,7 +617,7 @@ class IntegralTable(object):
         if not hasattr(self, '_I_E'):
             self._I_E = {}
             for absorber in self.grid.absorbers:
-                E = self.E[absorber]
+                E = self.tab_E[absorber]
                 self._I_E[absorber] = np.array(list(map(self.src.Spectrum, E)))
 
         return self._I_E
@@ -698,13 +702,13 @@ class IntegralTable(object):
 
             if self.pf['photon_conserving']:
                 integrand = self.I_E[absorber] \
-                    * np.exp(-self.tau_E_N[absorber][:,ind]) / self.E[absorber]
+                    * np.exp(-self.tau_E_N[absorber][:,ind]) / self.tab_E[absorber]
             else:
                 integrand = self.sigma_E[absorber] * self.I_E[absorber] \
                     * np.exp(-self.tau_E_N[absorber][:,ind]) \
-                    / self.E[absorber] / self.E_th[absorber]
+                    / self.tab_E[absorber] / self.E_th[absorber]
 
-            integral = np.trapz(integrand, self.E[absorber]) / erg_per_ev
+            integral = np.trapz(integrand, self.tab_E[absorber]) / erg_per_ev
 
         # If not, use Gaussian quadrature
         else:
@@ -752,7 +756,7 @@ class IntegralTable(object):
                     * np.exp(-self.tau_E_N) \
                     / self.E_th[absorber]
 
-            integral = np.trapz(integrand, self.E[absorber])
+            integral = np.trapz(integrand, self.tab_E[absorber])
 
         else:
             # Otherwise, continuous spectrum
@@ -807,9 +811,9 @@ class IntegralTable(object):
             # Integrate over energies in lookup table
             c = self.E >= max(Ei, self.src.Emin)
             c &= self.E <= self.src.Emax
-            samples = np.array([integrand(E) for E in self.E[c]])[..., 0]
+            samples = np.array([integrand(E) for E in self.tab_E[c]])[..., 0]
 
-            integral = simps(samples, self.E[c]) / erg_per_ev
+            integral = simps(samples, self.tab_E[c]) / erg_per_ev
 
         if not self.pf['photon_conserving']:
             integral *= self.E_th[absorber]
@@ -844,9 +848,9 @@ class IntegralTable(object):
             # Integrate over energies in lookup table
             c = self.E >= max(Ei, self.src.Emin)
             c &= self.E <= self.src.Emax
-            samples = np.array([integrand(E) for E in self.E[c]])[..., 0]
+            samples = np.array([integrand(E) for E in self.tab_E[c]])[..., 0]
 
-            integral = simps(samples, self.E[c])
+            integral = simps(samples, self.tab_E[c])
 
         if not self.pf['photon_conserving']:
             integral *= self.E_th[absorber]
@@ -882,9 +886,9 @@ class IntegralTable(object):
             # Integrate over energies in lookup table
             c = self.E >= max(Ej, self.src.Emin)
             c &= self.E <= self.src.Emax
-            samples = np.array([integrand(E) for E in self.E[c]])[..., 0]
+            samples = np.array([integrand(E) for E in self.tab_E[c]])[..., 0]
 
-            integral = simps(samples, self.E[c]) / erg_per_ev
+            integral = simps(samples, self.tab_E[c]) / erg_per_ev
 
         if not self.pf['photon_conserving']:
             integral *= self.E_th[absorber]
@@ -917,9 +921,9 @@ class IntegralTable(object):
             # Integrate over energies in lookup table
             c = self.E >= max(Ej, self.src.Emin)
             c &= self.E <= self.src.Emax
-            samples = np.array([integrand(E) for E in self.E[c]])[..., 0]
+            samples = np.array([integrand(E) for E in self.tab_E[c]])[..., 0]
 
-            integral = simps(samples, self.E[c])
+            integral = simps(samples, self.tab_E[c])
 
         if not self.pf['photon_conserving']:
             integral *= self.E_th[absorber]
@@ -1024,8 +1028,6 @@ class IntegralTable(object):
         # See if parameter file and integral table are consistent
         ok = True
         for i, axis in enumerate(axis_names):
-
-            print(i, axis)
 
             if axis not in self.axes_names:
                 print("WARNING: Axis \'{!s}\' not expected.".format(axis))
