@@ -13,8 +13,7 @@ Description:
 import re
 import numpy as np
 from ..util.Math import interp1d
-from ..util.Math import LinearNDInterpolator
-from scipy.interpolate import RectBivariateSpline
+from scipy.interpolate import RectBivariateSpline, RegularGridInterpolator
 
 spline_err = "interp_tab == cubic and there are infs in our table!"
 spline_err += "\nSpline interpolation is global, so any infs will render *all*"
@@ -145,4 +144,4 @@ class LookupTable(object):
             if self.Ed:
                 raise NotImplemented('Haven\'t implemented time and secondary ionization option yet.')
 
-            self.interp = LinearNDInterpolator(self.logN, self.table)
+            self.interp = RegularGridInterpolator(self.logN, self.table)

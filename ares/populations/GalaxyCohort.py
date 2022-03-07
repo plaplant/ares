@@ -28,8 +28,7 @@ from scipy.interpolate import RectBivariateSpline
 from .GalaxyAggregate import GalaxyAggregate
 from .Population import normalize_sed
 from ..util.Stats import bin_c2e, bin_e2c
-from ..util.Math import central_difference, interp1d_wrapper, interp1d, \
-    LinearNDInterpolator
+from ..util.Math import central_difference, interp1d_wrapper, interp1d
 from ..phenom.ParameterizedQuantity import ParameterizedQuantity
 from ..physics.Constants import s_per_yr, g_per_msun, cm_per_mpc, G, m_p, \
     k_B, h_p, erg_per_ev, ev_per_hz, sigma_T, c, t_edd, cm_per_kpc, E_LL, E_LyA, \
@@ -1744,7 +1743,7 @@ class GalaxyCohort(GalaxyAggregate,BlobFactory):
 
         .. note :: Just a wrapper around `self.dust.AUV`, which is using
             empirical dust corrections.
-            
+
         """
         return self.dust.AUV(z, MUV)
 
