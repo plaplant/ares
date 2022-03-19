@@ -23,6 +23,11 @@ from ares.physics.Constants import h_p, c, erg_per_ev, g_per_msun, s_per_yr, \
     s_per_myr, m_H, ev_per_hz, E_LL
 
 class SynthesisModelBase(Source):
+
+    @property
+    def _name(self):
+        return 'galaxy'
+        
     @property
     def _nebula(self):
         if not hasattr(self, '_nebula_'):
@@ -123,7 +128,7 @@ class SynthesisModelBase(Source):
 
         return None
 
-    def Spectrum(self, E):
+    def Spectrum(self, E, t=None):
         """
         Return a normalized version of the spectrum at photon energy E / eV.
         """
