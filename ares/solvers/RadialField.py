@@ -17,13 +17,13 @@ from ..util import ParameterFile
 from ..static import LocalVolume
 from ..physics.Constants import erg_per_ev, E_LyA, ev_per_hz
 
-class RadialField:
+class RadialField(object):
     def __init__(self, grid, **kwargs):
         self.grid = grid
         self.pf = ParameterFile(**kwargs)
 
         # Just so we can access more easily from within RaySegment
-        self.sources = Composite(self.grid, **self.pf).all_sources
+        self.sources = Composite(pf=self.pf, grid=self.grid).all_sources
 
         # Create instance to compute rate coefficients
         self.volume = LocalVolume(grid, self.sources, **kwargs)

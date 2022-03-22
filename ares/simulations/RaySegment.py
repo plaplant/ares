@@ -47,7 +47,7 @@ class RaySegment(AnalyzeRay):
     def info(self):
         print_1d_sim(self)
 
-    def save(self):
+    def save(self, prefix, suffix='pkl', clobber=False):
         pass
 
     def save_tables(self, prefix=None):

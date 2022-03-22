@@ -269,23 +269,16 @@ def print_1d_sim(sim):
     if sim.pf['radiative_transfer']:
 
         print(line('-' * twidth))
-        print(line('Source'))
+        print(line('Source(s)'))
         print(line('-' * twidth))
 
-        print(line("type        : {!s}".format(sim.pf['source_type'])))
-        if sim.pf['source_type'] == 'star':
-            print(line("T_surf      : {0:.2e} K".format(\
-                sim.pf['source_temperature'])))
-            print(line("Qdot        : {0:.2e} photons / sec".format(\
-                sim.pf['source_qdot'])))
-
-        print(line('-' * twidth))
-        print(line('Spectrum'))
-        print(line('-' * twidth))
-        print(line('not yet implemented'))
-
-        #if sim.pf['spectrum_E'] is not None:
-        #    tabulate()
+        for src in sim.field.sources:
+            print(line("type        : {!s}".format(src.pf['source_type'])))
+            if src.pf['source_type'] == 'star':
+                print(line("T_surf      : {0:.2e} K".format(\
+                    src.pf['source_temperature'])))
+                print(line("Qdot        : {0:.2e} photons / sec".format(\
+                    src.pf['source_qdot'])))
 
     print("#" * width)
     print("")

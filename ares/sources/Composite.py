@@ -19,57 +19,61 @@ from .SynthesisModel import SynthesisModel
 
 class Composite(object):
     """ Class for stitching together several radiation sources. """
-    def __init__(self, grid=None, **kwargs):
+    def __init__(self, pf=None, grid=None, **kwargs):
         """
-        Initialize composite radiation source object.        
-        
+        Initialize composite radiation source object.
+
         Parameters
         ----------
         grid : ares.static.Grid.Grid instance
-        
+
         """
-        
-        self.pf = kwargs.copy()
+
+        if pf is None:
+            self.pf = ParameterFile(**kwargs)
+        else:
+            self.pf = pf
+
+        N = self.Nsrcs = self.pf.Npops
+        self.pfs = self.pf.pfs
+
+        #self.pf = kwargs.copy()
         self.grid = grid
-        
-        if type(self.pf['source_type']) is not list:
-            self.pf['source_type'] = [self.pf['source_type']]    
 
-        self.Ns = len(self.pf['source_type'])
-        
+        #if type(self.pf['source_type']) is not list:
+        #    self.pf['source_type'] = [self.pf['source_type']]
+#
+        #self.Ns = len(self.pf['source_type'])
+
         self.all_sources = self.src = self.initialize_sources()
-        
-    def initialize_sources(self):
-        """ Construct list of RadiationSource class instances. """    
-        
-        sources = []
-        for i in range(self.Ns):
 
-            sf = self.pf.copy()
-                                                
+    def initialize_sources(self):
+        """ Construct list of RadiationSource class instances. """
+
+        sources = []
+        for i in range(self.Nsrcs):
+
+            sf = self.pfs[i].copy()
+
             # Look for {0}, {1}, etc. here
-                                                                        
+
             # Create RadiationSource class instance
-            if sf['source_type'][i] == 'star':
+            if sf['source_type'] == 'star':
                 rs = Star(**sf)
-            elif sf['source_type'][i] == 'bh':
+            elif sf['source_type'] == 'bh':
                 rs = BlackHole(**sf)
-            elif sf['source_type'][i] == 'toy':
+            elif sf['source_type'] == 'toy':
                 rs = Toy(**sf)
-            elif sf['source_type'][i] in ['cluster', 'galaxy']:
+            elif sf['source_type'] in ['cluster', 'galaxy']:
                 # Only difference is galaxies can have SFHs
                 rs = SynthesisModel(**sf)
             else:
                 msg = 'Unrecognized source_type: {!s}'.format(\
-                    sf['source_type'][i])
+                    sf['source_type'])
                 raise ValueError(msg)
-            
-            rs.grid = self.grid
-            
-            sources.append(rs)
-                
-        return sources
 
-            
-    
-        
+            rs.grid = self.grid
+
+            sources.append(rs)
+
+        return sources
