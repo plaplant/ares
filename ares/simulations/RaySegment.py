@@ -10,12 +10,14 @@ Description:
 
 """
 
+import os
 import numpy as np
 from ..util import ProgressBar
 from .GasParcel import GasParcel
 from ..solvers import RadialField
 from ..util.PrintInfo import print_1d_sim
 from ..util.ReadData import _sort_history
+from ..util.Pickling import write_pickle_file
 from ..analysis.RaySegment import RaySegment as AnalyzeRay
 
 class RaySegment(AnalyzeRay):
@@ -48,7 +50,38 @@ class RaySegment(AnalyzeRay):
         print_1d_sim(self)
 
     def save(self, prefix, suffix='pkl', clobber=False):
-        pass
+        """
+        Save results of simulation to disk.
+        """
+
+        fn = '{0!s}.history.{1!s}'.format(prefix, suffix)
+
+        if os.path.exists(fn):
+            if clobber:
+                os.remove(fn)
+            else:
+                raise IOError('{!s} exists! Set clobber=True to overwrite.'.format(fn))
+
+        if suffix == 'pkl':
+            write_pickle_file(self.history._data, fn, ndumps=1, open_mode='w',\
+                safe_mode=False, verbose=False)
+
+        elif suffix in ['hdf5', 'h5']:
+            import h5py
+
+            f = h5py.File(fn, 'w')
+            for key in self.history:
+                if fields is not None:
+                    if key not in fields:
+                        continue
+                f.create_dataset(key, data=np.array(self.history[key]))
+            f.close()
+
+        else:
+            raise NotImplemented('Only know pickle and hdf5 for now.')
+
+        if self.pf['verbose']:
+            print("# Wrote {}.".format(fn))
 
     def save_tables(self, prefix=None):
         """
