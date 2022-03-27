@@ -16,6 +16,8 @@ from math import floor, ceil
 import matplotlib.pyplot as pl
 from ..static.Grid import Grid
 from ..physics.Constants import *
+from ..physics import Cosmology
+from ..util.ReadData import LoadSimulation
 from ..util.SetDefaultParameterValues import *
 from .MultiPhaseMedium import HistoryContainer
 
@@ -33,7 +35,7 @@ except ImportError:
 
 linestyles = ['-', '--', ':', '-.']
 
-class RaySegment(object):
+class RaySegment(LoadSimulation):
     def __init__(self, data=None, **kwargs):
         """
         Initialize analysis object for RaySegment calculations.
@@ -60,6 +62,9 @@ class RaySegment(object):
             self._load_data(data)
 
         self.kwargs = kwargs
+
+        self.cosm = Cosmology(**self.pf)
+        self.grid = Grid(cosm=self.cosm, **self.pf)
 
         # Read in
         #if isinstance(data, simRS):

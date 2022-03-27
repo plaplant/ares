@@ -20,6 +20,7 @@ from ..physics.Constants import *
 from scipy.integrate import cumtrapz
 from scipy.interpolate import interp1d
 from ..physics import Cosmology, Hydrogen
+from ..util.ReadData import LoadSimulation
 from ..util.SetDefaultParameterValues import *
 from mpl_toolkits.axes_grid1 import inset_locator
 from .DerivedQuantities import DerivedQuantities as DQ
@@ -75,7 +76,7 @@ class HistoryContainer(dict):
 
 turning_points = ['D', 'C', 'B', 'A']
 
-class MultiPhaseMedium(object):
+class MultiPhaseMedium(LoadSimulation):
     def __init__(self, data=None, suffix='history', **kwargs):
         """
         Initialize analysis object.
@@ -100,77 +101,7 @@ class MultiPhaseMedium(object):
             self.prefix = data
             self._load_data(data)
 
-        self.kwargs = kwargs
-
-    def _load_data(self, data):
-        if os.path.exists('{!s}.history.pkl'.format(data)):
-            history = self._load_pkl(data)
-        else:
-            history = self._load_txt(data, suffix)
-
-        self._load_pf(data)
-        self.history = history
-
-    def _load_pf(self, data):
-        try:
-            self.pf = read_pickle_file('{!s}.parameters.pkl'.format(data),\
-                nloads=1, verbose=False)
-        # The import error is really meant to catch pickling errors
-        except (AttributeError, ImportError):
-            self.pf = {"final_redshift": 5., "initial_redshift": 100.}
-            print('Error loading {!s}.parameters.pkl.'.format(data))
-
-    def _load_txt(self, data, histsuffix):
-        found = False
-        for suffix in ['txt', 'dat']:
-            fn = '{0!s}.history.{1!s}'.format(data, suffix)
-            if os.path.exists(fn):
-                found = True
-                break
-
-        if not found:
-            raise IOError('Couldn\'t find file of form {!s}.history*'.format(\
-                data))
-
-        with open(fn, 'r') as f:
-            cols = f.readline()[1:].split()
-
-        data = np.loadtxt(fn, unpack=True)
-
-        return {key:data[i] for i, key in enumerate(cols)}
-
-    def _load_pkl(self, data):
-        try:
-            if not hasattr(self, '_suite'):
-                self._suite = []
-            fn = '{!s}.history.pkl'.format(data)
-            loaded_chunks = read_pickle_file(fn, nloads=None, verbose=False)
-            self._suite.extend(loaded_chunks)
-            if len(loaded_chunks) == 0:
-                raise IOError('Empty history ({!s}.history.pkl)'.format(data))
-            else:
-                history = self._suite[-1]
-        except IOError:
-            if re.search('pkl', data):
-                history = read_pickle_file(data, nloads=1, verbose=False)
-            else:
-                import glob
-                fns = glob.glob('./{!s}.history*'.format(data))
-                if not fns:
-                    raise IOError('No files with prefix {!s}.'.format(data))
-                else:
-                    fn = fns[0]
-
-                f = open(fn, 'r')
-                cols = f.readline().split()[1:]
-                _data = np.loadtxt(f)
-
-                history = {}
-                for i, col in enumerate(cols):
-                    history[col] = _data[:,i]
-                f.close()
-
-        return history
+        self.kwargs = kwargsLo
 
     @property
     def cosm(self):

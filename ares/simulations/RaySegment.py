@@ -15,6 +15,7 @@ import numpy as np
 from ..util import ProgressBar
 from .GasParcel import GasParcel
 from ..solvers import RadialField
+from ..util.Misc import get_hash
 from ..util.PrintInfo import print_1d_sim
 from ..util.ReadData import _sort_history
 from ..util.Pickling import write_pickle_file
@@ -82,6 +83,31 @@ class RaySegment(AnalyzeRay):
 
         if self.pf['verbose']:
             print("# Wrote {}.".format(fn))
+
+        write_pf = True
+        if os.path.exists('{!s}.parameters.pkl'.format(prefix)):
+            if clobber:
+                os.remove('{!s}.parameters.pkl'.format(prefix))
+            else:
+                write_pf = False
+                print(('WARNING: {!s}.parameters.pkl exists! Set ' +\
+                    'clobber=True to overwrite.').format(prefix))
+
+        if write_pf:
+
+            #pf = {}
+            #for key in self.pf:
+            #    if key in self.carryover_kwargs():
+            #        continue
+            #    pf[key] = self.pf[key]
+
+            if 'revision' not in self.pf:
+                self.pf['revision'] = get_hash()
+
+            # Save parameter file
+            write_pickle_file(self.pf, '{!s}.parameters.pkl'.format(prefix),\
+                ndumps=1, open_mode='w', safe_mode=False,\
+                verbose=self.pf['verbose'])
 
     def save_tables(self, prefix=None):
         """
