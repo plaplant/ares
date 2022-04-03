@@ -334,6 +334,9 @@ class IntegralTable(object):
         if rank == 0 and self.pf['verbose']:
             print('# Tabulating integral quantities...')
 
+        if self.pf['tables_discrete_gen'] and (size > 1):
+            self._tabulate_tau_E_N()
+
         # Will checkpoint if file provided
         f = None
         have_fn = False
@@ -342,19 +345,19 @@ class IntegralTable(object):
             if rank == 0 and self.pf['verbose']:
                 print("# Will save checkpoints to {}.".format(fn))
 
-        # Have to tabulate tau(E, N) if working with discrete SED.
-        if self.pf['tables_discrete_gen']:
-            self._tabulate_tau_E_N(fn)
-
         # Loop over integrals
         h = 0
         tabs = {}
         i_donor = 0
+        loaded = 0
+        tot = 0
         while h < len(self.list_of_integrals):
             integral = self.list_of_integrals[h]
 
             donor = self.grid.absorbers[i_donor]
             for i, absorber in enumerate(self.grid.absorbers):
+
+                tot += 1
 
                 name = self._DatasetName(integral, absorber, donor)
 
@@ -368,8 +371,10 @@ class IntegralTable(object):
                         skip_tab = 0
                         if name in f.keys():
                             tabs[name] = np.array(f[(name)])#.squeeze()
-                            if rank == 0 and self.pf['verbose']:
+                            if self.pf['verbose']:
                                 print("# Loaded {} from {}.".format(name, fn))
+                                loaded += 1
+
                             skip_tab = 1
 
                         f.close()
@@ -472,8 +477,14 @@ class IntegralTable(object):
                 h += 1
                 i_donor = 0
 
-        if rank == 0:
-            print('# Integral tabulation complete.')
+        if loaded == tot:
+            self._loaded_all = True
+            if rank == 0:
+                print('# All tables loaded.')
+        else:
+            self._loaded_all = False
+            if rank == 0:
+                print('# Integral tabulation complete.')
 
         # Collect results from all processors
         #if size > 1:
@@ -490,7 +501,7 @@ class IntegralTable(object):
 
         return tabs
 
-    def _tabulate_tau_E_N(self, fn=None):
+    def _tabulate_tau_E_N(self):
         """
         Tabulate the optical depth as a function of energy and column density.
         """
@@ -501,31 +512,11 @@ class IntegralTable(object):
         # of integration, at least in general.
         for i, absorber in enumerate(self.grid.absorbers):
 
-            name = 'tau_E_{}'.format(absorber)
-
-            skip = False
-            if fn is not None:
-                if os.path.exists(fn):
-                    f = h5py.File(fn, 'r')
-
-                    if name in f:
-                        self._tau_E_N[absorber] = np.array(f[(name)])
-                        print("# Loaded dataset {} from {}.".format(name, fn))
-                        skip = True
-
-                    f.close()
-
-            if skip:
-                continue
-
-            if self.pf['verbose']:
-                print("# Generating {}...".format(name))
-
-            #if i > 0:
-            #    abs_prev = self.grid.absorbers[i-1]
-            #    if np.all(self.tab_E[absorber] == self.tab_E[abs_prev]):
-            #        self._tau_E_N[absorber] = self._tau_E_N[abs_prev]
-            #        continue
+            if i > 0:
+                abs_prev = self.grid.absorbers[i-1]
+                if np.all(self.tab_E[absorber] == self.tab_E[abs_prev]):
+                    self._tau_E_N[absorber] = self._tau_E_N[abs_prev]
+                    continue
 
             buff = np.zeros([len(self.tab_E[absorber]), self.tab_N_flat.shape[0]])
 
@@ -533,7 +524,7 @@ class IntegralTable(object):
 
                 pb = ProgressBar(self.size,
                     'tau(E, N; {0!s}, {1!s})'.format(absorber,\
-                    actual_absorber), use=self.pf['progress_bar'])
+                    actual_absorber))
                 pb.start()
 
                 sigma = self.sigma_E[actual_absorber]
@@ -549,23 +540,11 @@ class IntegralTable(object):
 
                 pb.finish()
 
+            self._tau_E_N[absorber] = \
+                np.zeros([len(self.tab_E[absorber]), self.tab_N_flat.shape[0]])
+
             if size > 1:
-                self._tau_E_N[absorber] = \
-                    np.zeros([len(self.tab_E[absorber]), self.tab_N_flat.shape[0]])
                 nothing = MPI.COMM_WORLD.Allreduce(buff, self._tau_E_N[absorber])
-            else:
-                self._tau_E_N[absorber] = buff
-
-            ##
-            # Save checkpoint
-            if (fn is not None) and (rank == 0):
-                f = h5py.File(fn, 'a')
-                f.create_dataset(name, data=self._tau_E_N[absorber])
-                f.close()
-                print("# Saved dataset {} to {}.".format(name, fn))
-
-            if size > 1:
-                MPI.COMM_WORLD.Barrier()
 
             del buff
 
@@ -584,7 +563,7 @@ class IntegralTable(object):
             tau = 0.0
             for absorber in self.grid.absorbers:
                 E = self.tab_E[absorber]
-                tau += np.trapz(self.tab_tau_E_N[absorber][:,ind], E)
+                tau += np.trapz(self.tau_E_N[absorber][:,ind], E)
 
         else:
 
@@ -746,7 +725,7 @@ class IntegralTable(object):
 
 
     @property
-    def tab_tau_E_N(self):
+    def tau_E_N(self):
         """
         Energy-dependent optical depth as a function of column density.
 
@@ -758,7 +737,6 @@ class IntegralTable(object):
         """
 
         if not hasattr(self, '_tau_E_N'):
-            print("running from tab_tau_E_N")
             self._tabulate_tau_E_N()
             #self._tau_E_N = {}
             #for i, absorber in enumerate(self.grid.absorbers):
@@ -795,10 +773,10 @@ class IntegralTable(object):
 
             if self.pf['photon_conserving']:
                 integrand = self.I_E[absorber] \
-                    * np.exp(-self.tab_tau_E_N[absorber][:,ind]) / self.tab_E[absorber]
+                    * np.exp(-self.tau_E_N[absorber][:,ind]) / self.tab_E[absorber]
             else:
                 integrand = self.sigma_E[absorber] * self.I_E[absorber] \
-                    * np.exp(-self.tab_tau_E_N[absorber][:,ind]) \
+                    * np.exp(-self.tau_E_N[absorber][:,ind]) \
                     / self.tab_E[absorber] / self.E_th[absorber]
 
             integral = np.trapz(integrand, self.tab_E[absorber]) / erg_per_ev
@@ -843,10 +821,10 @@ class IntegralTable(object):
 
             if self.pf['photon_conserving']:
                 integrand = self.I_E[absorber] \
-                    * np.exp(-self.tab_tau_E_N[absorber][:,ind])
+                    * np.exp(-self.tau_E_N[absorber][:,ind])
             else:
                 integrand = self.sigma_E[absorber] * self.I_E[absorber] \
-                    * np.exp(-self.tab_tau_E_N) \
+                    * np.exp(-self.tau_E_N) \
                     / self.E_th[absorber]
 
             integral = np.trapz(integrand, self.tab_E[absorber])
@@ -880,10 +858,10 @@ class IntegralTable(object):
         if self.pf['tables_discrete_gen']:
             if self.pf['photon_conserving']:
                 integrand = self.fheat * self.I_E \
-                    * np.exp(-self.tab_tau_E_N[absorber][:,ind])
+                    * np.exp(-self.tau_E_N[absorber][:,ind])
             else:
                 integrand = self.fheat * self.sigma_E * self.I_E \
-                    * np.exp(-self.tab_tau_E_N[absorber][:,ind]) / Ei
+                    * np.exp(-self.tau_E_N[absorber][:,ind]) / Ei
 
         else:
 
@@ -1057,6 +1035,9 @@ class IntegralTable(object):
             self.TabulateRateIntegrals(fn)
 
         if rank > 0:
+            return
+
+        if self._loaded_all:
             return
 
         f = h5py.File(fn, 'w')
